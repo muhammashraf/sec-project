@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-// ignore: depend_on_referenced_packages
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -13,9 +12,11 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      initialRoute:
-          FirebaseAuth.instance.currentUser == null ? '/login' : '/home',
+      title: 'Flutter App',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
+      home: LoginScreen(),
       routes: {
         '/login': (context) => LoginScreen(),
         '/signup': (context) => SignUpScreen(),
@@ -31,20 +32,27 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
 
   void _login() async {
     if (_formKey.currentState?.validate() ?? false) {
       try {
-        await FirebaseAuth.instance.signInWithEmailAndPassword(
+        UserCredential userCredential =
+            await FirebaseAuth.instance.signInWithEmailAndPassword(
           email: _emailController.text,
           password: _passwordController.text,
         );
         Navigator.pushReplacementNamed(context, '/home');
-      } catch (e) {
-        print('Login error: $e');
+      } on FirebaseAuthException catch (e) {
+        if (e.code == 'user-not-found') {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('No user found for that email.')));
+        } else if (e.code == 'wrong-password') {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Wrong password provided for that user.')));
+        }
       }
     }
   }
@@ -58,12 +66,10 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Form(
           key: _formKey,
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               TextFormField(
                 controller: _emailController,
                 decoration: InputDecoration(labelText: 'Email'),
-                keyboardType: TextInputType.emailAddress,
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please enter your email';
@@ -91,7 +97,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 onPressed: () {
                   Navigator.pushNamed(context, '/signup');
                 },
-                child: Text('Don\'t have an account? Sign up'),
+                child: Text('Don\'t have an account? Sign Up'),
               ),
             ],
           ),
@@ -107,30 +113,27 @@ class SignUpScreen extends StatefulWidget {
 }
 
 class _SignUpScreenState extends State<SignUpScreen> {
-  final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
 
   void _signUp() async {
     if (_formKey.currentState?.validate() ?? false) {
       try {
-        if (_passwordController.text != _confirmPasswordController.text) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Passwords do not match')),
-          );
-          return;
-        }
         UserCredential userCredential =
             await FirebaseAuth.instance.createUserWithEmailAndPassword(
           email: _emailController.text,
           password: _passwordController.text,
         );
-        userCredential.user?.updateProfile(displayName: _nameController.text);
         Navigator.pushReplacementNamed(context, '/home');
-      } catch (e) {
-        print('Sign up error: $e');
+      } on FirebaseAuthException catch (e) {
+        if (e.code == 'weak-password') {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('The password provided is too weak.')));
+        } else if (e.code == 'email-already-in-use') {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('The account already exists for that email.')));
+        }
       }
     }
   }
@@ -144,22 +147,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
         child: Form(
           key: _formKey,
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              TextFormField(
-                controller: _nameController,
-                decoration: InputDecoration(labelText: 'Name'),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your name';
-                  }
-                  return null;
-                },
-              ),
               TextFormField(
                 controller: _emailController,
                 decoration: InputDecoration(labelText: 'Email'),
-                keyboardType: TextInputType.emailAddress,
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please enter your email';
@@ -174,17 +165,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please enter your password';
-                  }
-                  return null;
-                },
-              ),
-              TextFormField(
-                controller: _confirmPasswordController,
-                decoration: InputDecoration(labelText: 'Confirm Password'),
-                obscureText: true,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please confirm your password';
                   }
                   return null;
                 },
@@ -212,48 +192,40 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final List<Widget> _screens = [
     CounterScreen(),
-    SliderScreen(),
-    GridScreen(),
+    PhotoSliderScreen(),
+    GridViewScreen(),
     CalculatorScreen(),
   ];
-
-  void _onTabTapped(int index) {
-    setState(() {
-      _currentIndex = index;
-    });
-  }
-
-  void _signOut() async {
-    await FirebaseAuth.instance.signOut();
-    Navigator.pushReplacementNamed(context, '/login');
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Flutter Navigation App"),
+        title: Text('Home'),
         actions: [
           IconButton(
             icon: Icon(Icons.logout),
-            onPressed: _signOut,
+            onPressed: () async {
+              await FirebaseAuth.instance.signOut();
+              Navigator.pushReplacementNamed(context, '/login');
+            },
           ),
         ],
       ),
       body: _screens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        onTap: _onTabTapped,
-        backgroundColor: Colors.blueGrey,
-        selectedItemColor: Colors.white,
-        unselectedItemColor: Colors.grey,
+        onTap: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
         items: [
-          BottomNavigationBarItem(icon: Icon(Icons.add), label: "Counter"),
+          BottomNavigationBarItem(icon: Icon(Icons.add), label: 'Counter'),
+          BottomNavigationBarItem(icon: Icon(Icons.photo), label: 'Slider'),
+          BottomNavigationBarItem(icon: Icon(Icons.grid_on), label: 'Grid'),
           BottomNavigationBarItem(
-              icon: Icon(Icons.linear_scale), label: "Slider"),
-          BottomNavigationBarItem(icon: Icon(Icons.grid_on), label: "Grid"),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.calculate), label: "Calculator"),
+              icon: Icon(Icons.calculate), label: 'Calculator'),
         ],
       ),
     );
@@ -268,118 +240,104 @@ class CounterScreen extends StatefulWidget {
 class _CounterScreenState extends State<CounterScreen> {
   int _counter = 0;
 
-  void _incrementCounter() {
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text('Counter: $_counter', style: TextStyle(fontSize: 24)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                icon: Icon(Icons.remove),
+                onPressed: () {
+                  setState(() {
+                    _counter--;
+                  });
+                },
+              ),
+              IconButton(
+                icon: Icon(Icons.add),
+                onPressed: () {
+                  setState(() {
+                    _counter++;
+                  });
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class PhotoSliderScreen extends StatefulWidget {
+  @override
+  _PhotoSliderScreenState createState() => _PhotoSliderScreenState();
+}
+
+class _PhotoSliderScreenState extends State<PhotoSliderScreen> {
+  int _currentIndex = 0;
+
+  final List<String> _images = [
+    'assets/image1.jpg',
+    'assets/image2.jpg',
+    'assets/image3.jpg',
+    'assets/image4.jpg',
+  ];
+
+  void _previousImage() {
     setState(() {
-      _counter++;
+      _currentIndex = (_currentIndex - 1) % _images.length;
+    });
+  }
+
+  void _nextImage() {
+    setState(() {
+      _currentIndex = (_currentIndex + 1) % _images.length;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            'Counter Value:',
-            style: TextStyle(fontSize: 24),
-          ),
-          Text(
-            '$_counter',
-            style: TextStyle(fontSize: 48),
-          ),
-          SizedBox(height: 20),
-          ElevatedButton(
-            onPressed: _incrementCounter,
-            child: Text("Increment Counter"),
-          ),
-        ],
-      ),
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Image.asset(_images[_currentIndex]),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            IconButton(icon: Icon(Icons.arrow_back), onPressed: _previousImage),
+            IconButton(icon: Icon(Icons.arrow_forward), onPressed: _nextImage),
+          ],
+        ),
+      ],
     );
   }
 }
 
-class SliderScreen extends StatefulWidget {
-  @override
-  _SliderScreenState createState() => _SliderScreenState();
-}
-
-class _SliderScreenState extends State<SliderScreen> {
-  double _sliderValue = 0.0;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            'Slider Value:',
-            style: TextStyle(fontSize: 24),
-          ),
-          Text(
-            _sliderValue.toStringAsFixed(2),
-            style: TextStyle(fontSize: 48),
-          ),
-          Slider(
-            value: _sliderValue,
-            min: 0.0,
-            max: 100.0,
-            onChanged: (newValue) {
-              setState(() {
-                _sliderValue = newValue;
-              });
-            },
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class GridScreen extends StatelessWidget {
-  final List<Map<String, String>> _items = [
-    {'imagePath': 'assets/image1.png', 'title': 'Image 1'},
-    {'imagePath': 'assets/image2.png', 'title': 'Image 2'},
-    {'imagePath': 'assets/image3.png', 'title': 'Image 3'},
-    {'imagePath': 'assets/image4.png', 'title': 'Image 4'},
-  ];
+class GridViewScreen extends StatelessWidget {
+  final List<String> _items = List<String>.generate(20, (i) => "Item $i");
 
   @override
   Widget build(BuildContext context) {
     return GridView.builder(
-      padding: EdgeInsets.all(10),
+      padding: const EdgeInsets.all(8.0),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
+        crossAxisSpacing: 8.0,
+        mainAxisSpacing: 8.0,
       ),
       itemCount: _items.length,
       itemBuilder: (context, index) {
-        final item = _items[index];
-        return Column(
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.blue,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Image.asset(
-                  item['imagePath']!,
-                  height: 100,
-                  width: 100,
-                  fit: BoxFit.cover,
-                ),
-              ),
-            ),
-            SizedBox(height: 10),
-            Text(
-              item['title']!,
-              style: TextStyle(color: Colors.black, fontSize: 20),
-            ),
-          ],
+        return Container(
+          color: Colors.blue[100 * (index % 9)],
+          child: Center(
+            child: Text(_items[index], style: TextStyle(fontSize: 18)),
+          ),
         );
       },
     );
@@ -394,44 +352,46 @@ class CalculatorScreen extends StatefulWidget {
 class _CalculatorScreenState extends State<CalculatorScreen> {
   final TextEditingController _num1Controller = TextEditingController();
   final TextEditingController _num2Controller = TextEditingController();
-  String _result = "";
+  String _result = '';
 
   void _calculateSum() {
-    final num1 = double.tryParse(_num1Controller.text) ?? 0;
-    final num2 = double.tryParse(_num2Controller.text) ?? 0;
-    setState(() {
-      _result = "Result: ${(num1 + num2).toString()}";
-    });
+    final num1 = int.tryParse(_num1Controller.text);
+    final num2 = int.tryParse(_num2Controller.text);
+    if (num1 != null && num2 != null) {
+      setState(() {
+        _result = 'Sum: ${num1 + num2}';
+      });
+    } else {
+      setState(() {
+        _result = 'Invalid input';
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(20.0),
+      padding: const EdgeInsets.all(16.0),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          TextFormField(
+          TextField(
             controller: _num1Controller,
+            decoration: InputDecoration(labelText: 'Enter first number'),
             keyboardType: TextInputType.number,
-            decoration: InputDecoration(labelText: "Enter first number"),
           ),
-          SizedBox(height: 20),
-          TextFormField(
+          TextField(
             controller: _num2Controller,
+            decoration: InputDecoration(labelText: 'Enter second number'),
             keyboardType: TextInputType.number,
-            decoration: InputDecoration(labelText: "Enter second number"),
           ),
           SizedBox(height: 20),
           ElevatedButton(
             onPressed: _calculateSum,
-            child: Text("Calculate"),
+            child: Text('Calculate Sum'),
           ),
           SizedBox(height: 20),
-          Text(
-            _result,
-            style: TextStyle(fontSize: 24),
-          ),
+          Text(_result, style: TextStyle(fontSize: 24)),
         ],
       ),
     );
